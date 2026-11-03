@@ -1,44 +1,67 @@
-﻿import { GoogleGenAI } from '@google/genai';
+﻿import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey);
 
-export async function analyzeFaultReport(userMessage) {
-  if (apiKey && apiKey !== 'YOUR_GEMINI_API_KEY') {
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = You are a Municipal Fault Triage AI for the City of Johannesburg (Midrand).
-Analyze this citizen fault report and return ONLY a raw JSON object (no markdown) with keys:
-- "faultCategory": ["Pothole", "Water", "Electricity", "Traffic Signal", "Other"]
-- "severityLevel": ["Low", "Medium", "High", "Critical"]
-- "aiSummary": a concise 4-to-7 word technical summary
-- "botReply": a polite 1-sentence confirmation.
+const MOCK_MODE = false; 
 
-Citizen Report: " + userMessage + ";
+export async function analyzeFaultReport(userText, retries = 3) {
+  if (MOCK_MODE) {
+    const text = userText.toLowerCase();
+    let category = "General Issue";
+    let severity = "Medium";
+    
+    if (text.includes("pothole") || text.includes("road") || text.includes("sinkhole")) { category = "Pothole"; severity = "High"; }
+    else if (text.includes("pipe") || text.includes("water") || text.includes("leak")) { category = "Burst Pipe"; severity = "Critical"; }
+    else if (text.includes("light") || text.includes("traffic")) { category = "Traffic Light"; severity = "High"; }
+    else if (text.includes("cable") || text.includes("power") || text.includes("electricity")) { category = "Power Outage"; severity = "Critical"; }
+    else if (text.includes("tree")) { category = "Fallen Tree"; severity = "Medium"; }
+    else if (text.includes("trash") || text.includes("refuse") || text.includes("bin")) { category = "Uncollected Trash"; severity = "Low"; }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
+    console.log("[TRACE] 2.5 MOCK MODE ACTIVE: Categorized as " + category);
+    return {
+      faultCategory: category,
+      severityLevel: severity,
+      aiSummary: "Simulated triage for: " + userText,
+      botReply: `We've successfully logged your report regarding the ${category.toLowerCase()} for testing.`
+    };
+  }
 
-      return JSON.parse(response.text.replace(/`json|`/g, '').trim());
-    } catch (err) {
-      console.warn('Gemini API fallback triggered:', err.message);
-    }
-  }
+  const model = genAI.getGenerativeModel({ 
+    model: 'gemini-3.8-flash', 
+    generationConfig: { responseMimeType: "application/json" }
+  });
+  
+  const prompt = `
+    Analyze this municipal fault report: "${userText}"
+    
+    Respond strictly with a JSON object using these exact keys:
+    - "faultCategory": A specific 1-to-3 word category.
+    - "severityLevel": The priority level (Low, Medium, High, Critical).
+    - "aiSummary": A short technical summary for the dispatch team.
+    - "botReply": A friendly reply.
+  `;
 
-  const text = userMessage.toLowerCase();
-  let faultCategory = 'Other';
-  let severityLevel = 'Medium';
-
-  if (text.includes('pothole') || text.includes('road')) {
-    faultCategory = 'Pothole'; severityLevel = text.includes('huge') ? 'High' : 'Medium';
-  } else if (text.includes('water') || text.includes('pipe') || text.includes('burst')) {
-    faultCategory = 'Water'; severityLevel = 'Critical';
-  }
-
-  return {
-    faultCategory, severityLevel,
-    aiSummary: faultCategory + ' issue reported',
-    botReply: 'Logged your report under ' + faultCategory + ' and running 50m spatial cluster check.'
-  };
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await model.generateContent(prompt);
+      return JSON.parse(result.response.text());
+    } catch (error) {
+      const isOverloaded = error.message?.includes('503') || error.message?.includes('high demand') || error.message?.includes('quota');
+      
+      if (isOverloaded && i < retries - 1) {
+        console.warn(`Google API busy. Retrying in 2 seconds... (Attempt ${i + 1} of ${retries})`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }
+      
+      console.error("AI Triage Error:", error);
+      return {
+        faultCategory: "AI Processing Failed",
+        severityLevel: "Medium",
+        aiSummary: "AI categorization failed due to server load or quota limits. Manual review required: " + userText,
+        botReply: "Thank you! We've successfully logged the issue for our maintenance teams. (Note: Automated triage is currently delayed)."
+      };
+    }
+  }
 }

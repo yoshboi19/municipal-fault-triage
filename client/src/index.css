@@ -6,3 +6,26 @@ body {
   color: #f8fafc;
   font-family: system-ui, -apple-system, sans-serif;
 }
+.custom-cluster-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: white;
+  font-weight: bold;
+  font-family: sans-serif;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  border: 3px solid rgba(255,255,255,0.5);
+}
+
+.cluster-low {
+  background-color: rgba(16, 185, 129, 0.9); /* Emerald */
+}
+
+.cluster-medium {
+  background-color: rgba(245, 158, 11, 0.9); /* Amber */
+}
+
+.cluster-high {
+  background-color: rgba(239, 68, 68, 0.9); /* Red */
+}
